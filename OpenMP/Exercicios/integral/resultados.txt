@@ -1,0 +1,5 @@
+1 threads:
+
+Tempo de execução: 2.308710 segundos
+
+Tempo de execução: 2.281089 segundos
