@@ -1,4 +1,4 @@
-/*
+	/*
 MIT License
 
 Copyright (c) 2021 Parallel Applications Modelling Group - GMAP 
@@ -49,7 +49,6 @@ Authors of the C++ code:
 #include "../common/npb-CPP.hpp"
 #include "npbparams.hpp"
 #include <mpi.h>
-
 /*
  * --------------------------------------------------------------------
  * this is the serial version of the app benchmark 1,
@@ -82,6 +81,21 @@ static double (*q)=(double*)malloc(sizeof(double)*(NQ));
 
 /* ep */
 int main(int argc, char **argv){
+
+//////////////////////////////////////////////////////
+//////////////////////////////////////////////////////
+//////////////////////////////////////////////////////
+
+	MPI_Init(&argc, &argv);
+	int rank, size_mpi;
+
+	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+	MPI_Comm_size(MPI_COMM_WORLD, &size_mpi);
+	
+//////////////////////////////////////////////////////
+//////////////////////////////////////////////////////
+//////////////////////////////////////////////////////
+
 #if defined(DO_NOT_ALLOCATE_ARRAYS_WITH_DYNAMIC_MEMORY_AND_AS_SINGLE_DIMENSION)
 	printf(" DO_NOT_ALLOCATE_ARRAYS_WITH_DYNAMIC_MEMORY_AND_AS_SINGLE_DIMENSION mode on\n");
 #endif
@@ -111,13 +125,16 @@ int main(int argc, char **argv){
 	 * point print statement (internal file)
 	 * --------------------------------------------------------------------
 	 */    
+
+	
 	sprintf(size, "%15.0f", pow(2.0, M+1));
 	j = 14;
 	if(size[j]=='.'){j--;}
 	size[j+1] = '\0';
+	if(rank == 0) {
 	printf("\n\n NAS Parallel Benchmarks 4.1 Serial C++ version - EP Benchmark\n\n");
 	printf(" Number of random numbers generated: %15s\n", size);
-
+	}
 	verified = FALSE;
 
 	/*
@@ -173,26 +190,20 @@ int main(int argc, char **argv){
 	 */
 	k_offset = -1;
 
-	////////////////////////////////////////////////
-	////////////////////////////////////////////////
+	/////////////////////////////////////////////////////
+	/////////////////////////////////////////////////////
 
-	MPI_Init(&argc, &argv);
-
-	int rank, size_mpi;
-
-	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-	MPI_Comm_size(MPI_COMM_WORLD, &size_mpi);
-
-	int n_elementos_por_processo = NK / size_mpi;
+	int n_elementos_processo = NK / size_mpi;
 	int resto = NK % size_mpi;
-	int start_index = rank * n_elementos_por_processo;
-	int end_index = start_index + n_elementos_por_processo;
+
+	int start_index = rank * n_elementos_processo;
+	int end_index = start_index + n_elementos_processo;
 	if(rank == size_mpi - 1) {
 		end_index += resto;
 	}
 
-	////////////////////////////////////////////////
-	////////////////////////////////////////////////
+	/////////////////////////////////////////////////////
+	/////////////////////////////////////////////////////
 
 	for(k=1; k<=np; k++){
 		kk = k_offset + k;
@@ -221,6 +232,8 @@ int main(int argc, char **argv){
 
 		if(timers_enabled){timer_start(1);}
 
+
+
 		for(i=start_index; i<end_index; i++){
 			x1 = 2.0 * x[2*i] - 1.0;
 			x2 = 2.0 * x[2*i+1] - 1.0;
@@ -230,19 +243,40 @@ int main(int argc, char **argv){
 				t3 = (x1 * t2);
 				t4 = (x2 * t2);
 				l = max(fabs(t3), fabs(t4));
+
 				q[l] += 1.0;
+
 				sx = sx + t3;
 				sy = sy + t4;
 			}
 		}
-		if(rank != 0) {
-
-			MPI_Send(&sx, 1, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD);
-			MPI_Send(&sy, 1, MPI_DOUBLE, 0, 1, MPI_COMM_WORLD);
-			MPI_Send(q, NQ, MPI_DOUBLE, 0, 2, MPI_COMM_WORLD);
-		}
 		if(timers_enabled){timer_stop(1);}
 	}
+
+
+	if(rank != 0) {
+		MPI_Send(&sx, 1, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD);
+		MPI_Send(&sy, 1, MPI_DOUBLE, 0, 1, MPI_COMM_WORLD);
+		MPI_Send(q, NQ, MPI_DOUBLE, 0, 2, MPI_COMM_WORLD);
+	} else {
+		for(int i = 0; i < size_mpi; i++) {
+			double sx_recebido, sy_recebido;
+			double q_recebido[NQ];
+
+			MPI_Recv(&sx_recebido, 1, MPI_DOUBLE, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+			MPI_Recv(&sy_recebido, 1, MPI_DOUBLE, i, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+			MPI_Recv(q_recebido, NQ, MPI_DOUBLE, i, 2, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+			
+			sx+=sx_recebido;
+			sy+=sy_recebido;
+			
+			for(int j = 0; j < NQ; j++) {
+				q[j] += q_recebido[j];
+			}		
+		}
+	}
+
+	MPI_Finalize();
 
 	for(i=0; i<=NQ-1; i++){
 		gc = gc + q[i];
@@ -284,6 +318,7 @@ int main(int argc, char **argv){
 	}
 	Mops = pow(2.0, M+1)/tm/1000000.0;
 
+	if(rank == 0) {
 	printf("\n EP Benchmark Results:\n\n");
 	printf(" CPU Time =%10.4f\n", tm);
 	printf(" N = 2^%5d\n", M);
@@ -314,6 +349,7 @@ int main(int argc, char **argv){
 			(char*)CS5,
 			(char*)CS6,
 			(char*)CS7);
+				}
 
 	if(timers_enabled){
 		if(tm <= 0.0){tm = 1.0;}
