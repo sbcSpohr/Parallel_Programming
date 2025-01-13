@@ -49,6 +49,7 @@ Authors of the C++ code:
 #include "../common/npb-CPP.hpp"
 #include "npbparams.hpp"
 #include <mpi.h>
+
 /*
  * --------------------------------------------------------------------
  * this is the serial version of the app benchmark 1,
@@ -259,20 +260,25 @@ int main(int argc, char **argv){
 		MPI_Send(&sy, 1, MPI_DOUBLE, 0, 1, MPI_COMM_WORLD);
 		MPI_Send(q, NQ, MPI_DOUBLE, 0, 2, MPI_COMM_WORLD);
 	} else {
-		for(int i = 0; i < size_mpi; i++) {
+		for(int i = 1; i < size_mpi; i++) {
 			double sx_recebido, sy_recebido;
 			double q_recebido[NQ];
+
+			
+			// int MPI_Recv(void *buf, int count, MPI_Datatype datatype, int source, int tag,
+            //  MPI_Comm comm, MPI_Status *status)
+
 
 			MPI_Recv(&sx_recebido, 1, MPI_DOUBLE, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 			MPI_Recv(&sy_recebido, 1, MPI_DOUBLE, i, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 			MPI_Recv(q_recebido, NQ, MPI_DOUBLE, i, 2, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-			
 			sx+=sx_recebido;
 			sy+=sy_recebido;
+
 			
 			for(int j = 0; j < NQ; j++) {
 				q[j] += q_recebido[j];
-			}		
+			}
 		}
 	}
 
@@ -319,37 +325,37 @@ int main(int argc, char **argv){
 	Mops = pow(2.0, M+1)/tm/1000000.0;
 
 	if(rank == 0) {
-	printf("\n EP Benchmark Results:\n\n");
-	printf(" CPU Time =%10.4f\n", tm);
-	printf(" N = 2^%5d\n", M);
-	printf(" No. Gaussian Pairs = %15.0f\n", gc);
-	printf(" Sums = %25.15e %25.15e\n", sx, sy);
-	printf(" Counts: \n");
-	for(i=0; i<NQ-1; i++){
-		printf("%3d%15.0f\n", i, q[i]);
-	}
+		printf("\n EP Benchmark Results:\n\n");
+		printf(" CPU Time =%10.4f\n", tm);
+		printf(" N = 2^%5d\n", M);
+		printf(" No. Gaussian Pairs = %15.0f\n", gc);
+		printf(" Sums = %25.15e %25.15e\n", sx, sy);
+		printf(" Counts: \n");
+		for(i=0; i<NQ-1; i++){
+			printf("%3d%15.0f\n", i, q[i]);
+		}
 
-	c_print_results((char*)"EP",
-			CLASS,
-			M+1,
-			0,
-			0,
-			nit,
-			tm,
-			Mops,
-			(char*)"Random numbers generated",
-			verified,
-			(char*)NPBVERSION,
-			(char*)COMPILETIME,
-			(char*)COMPILERVERSION,
-			(char*)CS1,
-			(char*)CS2,
-			(char*)CS3,
-			(char*)CS4,
-			(char*)CS5,
-			(char*)CS6,
-			(char*)CS7);
-				}
+		c_print_results((char*)"EP",
+				CLASS,
+				M+1,
+				0,
+				0,
+				nit,
+				tm,
+				Mops,
+				(char*)"Random numbers generated",
+				verified,
+				(char*)NPBVERSION,
+				(char*)COMPILETIME,
+				(char*)COMPILERVERSION,
+				(char*)CS1,
+				(char*)CS2,
+				(char*)CS3,
+				(char*)CS4,
+				(char*)CS5,
+				(char*)CS6,
+				(char*)CS7);
+			}
 
 	if(timers_enabled){
 		if(tm <= 0.0){tm = 1.0;}
