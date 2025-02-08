@@ -49,7 +49,7 @@ int main(int argc, char **argv[]) {
 
         MPI_Bcast(&total_lines, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-        int process_lines = total_lines / size_mpi;
-        int amount = total_lines % size_mpi;
-    }
+        int process_lines = (rank < total_lines % size_mpi) ? (total_lines / size_mpi + 1) : (total_lines / size_mpi);
 
+
+    }
