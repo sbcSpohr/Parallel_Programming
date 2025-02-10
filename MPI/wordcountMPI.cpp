@@ -20,6 +20,12 @@ unordered_map<string, int> countWords(string &texto) {
     return word_count;
 }
 
+void mergeMaps(unordered_map<string, int> &global_map, unordered_map<string, int> &local_map) {
+    for(auto &word : local_map) {
+        global_map[word.first] += word.second;
+    }
+}
+
 int main(int argc, char **argv) {
     MPI_Init(&argc, &argv);
 
@@ -52,10 +58,10 @@ int main(int argc, char **argv) {
     int start = (total_size  / size) * rank;
     int end = (rank == size - 1) ? total_size : (total_size / size) * (rank + 1);
 
-    while(start > 0 && &full_text[start] != ' ') {
+    while(start > 0 && full_text[start] != ' ') {
         start++;
     }
-    while(end < total_size  && &full_text[end] != ' ') {
+    while(end < total_size  && full_text[end] != ' ') {
         end++;
     }
 
@@ -65,13 +71,23 @@ int main(int argc, char **argv) {
     if(rank == 0) {
 
         unordered_map<string, int> global_word_count = local_word_count;
-        for(int i = 1 i < size; i++) {
-        
-
+        for(int i = 1; i < size; i++) {
+            int recv_size;
+            MPI_Recv(&recv_size, 1, MPI_INT, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            vector<char> recv_buffer(recv_size);
+            MPI_Recv(recv_buffer.data(), recv_size, MPI_CHAR, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            string received_string(recv_buffer.begin(), recv_buffer.end());
+            unordered_map<string, int> received_map = countWords(received_string);
+            mergeMaps(global_word_count, received_map);
         }
+
+        for(auto &word : global_word_count) {
+                cout << word.first << ": " << word.second << endl;
+            }
+
     } else {
 
-        string local_text_string(local_text);
+        string local_text_string = local_text;
         int send_size = local_text_string.size();
         MPI_Send(&send_size, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
         MPI_Send(local_text_string.data(), send_size, MPI_CHAR, 0, 0, MPI_COMM_WORLD);
