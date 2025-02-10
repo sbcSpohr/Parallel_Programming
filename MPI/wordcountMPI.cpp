@@ -59,10 +59,25 @@ int main(int argc, char **argv) {
         end++;
     }
 
-    
+    string local_text = full_text.substr(start, end - start);   //string substr(size_t pos, size_t len) const; pos(posicao que comeca a extrair o texto) len(comprimento da substring, quantos caracteres queremos extrair)
+    unordered_map<string, int> local_word_count = countWords(local_text);
 
+    if(rank == 0) {
 
+        unordered_map<string, int> global_word_count = local_word_count;
+        for(int i = 1 i < size; i++) {
+        
 
+        }
+    } else {
 
+        string local_text_string(local_text);
+        int send_size = local_text_string.size();
+        MPI_Send(&send_size, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
+        MPI_Send(local_text_string.data(), send_size, MPI_CHAR, 0, 0, MPI_COMM_WORLD);
+    }
 
+    MPI_Finalize();
+
+    return 0;
 }
