@@ -62,20 +62,10 @@ int main(int argc, char **argv) {
     }
 
         MPI_Bcast(&total_size, 1, MPI_INT, 0, MPI_COMM_WORLD);
-
+        full_text.resize(total_size);          
+        MPI_Bcast(&full_text[0], total_size, MPI_CHAR, 0, MPI_COMM_WORLD);
 
         if(rank > 1) {
-
-            full_text.resize(total_size);unordered_map<string, int> count_words(string &text) {
-    unordered_map<string, int> count;
-    stringstream ss(text);
-    string word;
-    while(getline(ss, word, ' ')) {
-        count[word]++;
-    }
-    return count;
-}
-            MPI_Bcast(&full_text[0], total_size, MPI_CHAR, 0, MPI_COMM_WORLD);
 
             int start = (rank == 2) ? 0 : (total_size / size) * rank;
             int end = (rank == size - 1) ? total_size : (total_size / size) * (rank + 1);
