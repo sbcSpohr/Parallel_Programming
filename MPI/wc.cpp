@@ -1,94 +1,128 @@
 #include <iostream>
 #include <string>
-#include <unordered_map>
 #include <vector>
+#include <unordered_map>
 #include <fstream>
 #include <sstream>
+
 #include <mpi.h>
 
 using namespace std;
 
-unordered_map<string, int> countWords(const string &texto) {
+unordered_map<string, int> count_words(string &text) {
 
-    unordered_map<string, int> word_count;
+    unordered_map<string, int> count;
+
+    stringstream ss(text);
     string word;
-    stringstream text(texto);
-   
-    while(getline(text, word, ' ')) {
-        word_count[word]++;
-    }
 
-    return word_count;
+    while(getline(ss, word, ' ')) {
+        count[word]++;
+    }
+    
+    return count;
 }
 
-void mergeMaps(unordered_map<string, int> &global_map, const unordered_map<string, int> &local_map) {
-    for (const auto &entry : local_map) {
-        global_map[entry.first] += entry.second;
+void merging (unordered_map<string, int>&global_map, unordered_map<string, int>&local_map) {
+
+    for(auto &word : local_map) {
+        global_map[word.first] += word.second;
     }
 }
 
 int main(int argc, char **argv) {
-    MPI_Init(&argc, &argv);
 
+
+    MPI_Init(&argc, &argv);
     int rank, size;
+
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
+    int total_size;
     string full_text;
-    int total_size = 0;
 
-    if (rank == 0) {
+    if(rank == 0) {
         ifstream file(argv[1]);
-        if (!file) {
-            cout << "ERRO arquivo" << endl;
+
+        if(!file) {
+            cerr << "Erro abrir arquivo" << endl;
             MPI_Abort(MPI_COMM_WORLD, 1);
         }
 
-        stringstream buffer;
-        buffer << file.rdbuf();         //armazena todo conteudo do arquivo na ss buffer (usar uma ss para o fluxo de dados com operador "<<")
-        full_text = buffer.str();       //converte para uma string o buffer e armazena em full_text
-        file.close();                   
-        total_size = full_text.size();  
+        stringstream store_text;
+
+        store_text << file.rdbuf();
+        full_text = store_text.str();
+
+        file.close();
+
+        total_size = full_text.size();
+        int chunk_size = total_size / (size - 2);
+
+        int index = 0;
+        while(index < full_text.size()) {
+            for(int i = 2; i < size; i++) {
+               int start = index;
+               int end = start + chunk_size;
+
+               if (end >= total_size) {end = total_size;}
+
+               while(end < total_size && full_text[end] != ' ') {end++;}
+
+               string chunk = full_text.substr(start, end - start);
+
+               int chunk_length = chunk.size();
+
+               MPI_Send(&chunk_length, 1, MPI_INT, i, 0, MPI_COMM_WORLD);
+               MPI_Send(chunk.data(), chunk_length, MPI_CHAR, i, 0, MPI_COMM_WORLD);
+
+               index = end;
+            }
+        }
     }
 
-    MPI_Bcast(&total_size, 1, MPI_INT, 0, MPI_COMM_WORLD);
+        MPI_Bcast(&total_size, 1, MPI_INT, 0, MPI_COMM_WORLD);
+        full_text.resize(total_size);          
+        MPI_Bcast(&full_text[0], total_size, MPI_CHAR, 0, MPI_COMM_WORLD);
 
-    full_text.resize(total_size);
-    MPI_Bcast(&full_text[0], total_size, MPI_CHAR, 0, MPI_COMM_WORLD);
+        if(rank > 1) {
 
-    int start = (total_size / size) * rank;
-    int end = (rank == size - 1) ? total_size : (total_size / size) * (rank + 1);
+            int start = (rank == 2) ? 0 : (total_size / size) * rank;
+            int end = (rank == size - 1) ? total_size : (total_size / size) * (rank + 1);
 
-    // Ajustar início e fim para evitar dividir palavras ao meio
-    while (start > 0 && full_text[start] != ' ') start++;
-    while (end < total_size && full_text[end] != ' ') end++;
+            while(start > 0 && full_text[start] != ' ') { start++;}
+            while(end < total_size && full_text[end] != ' ') { end++;}
 
-    string local_text = full_text.substr(start, end - start);
-    unordered_map<string, int> local_word_count = countWords(local_text);
+            string local_text = full_text.substr(start, end - start);
 
-    // Enviar resultados para o processo 0
-    if (rank == 0) {
-        unordered_map<string, int> global_word_count = local_word_count;
-        for (int i = 1; i < size; ++i) {
-            int recv_size;
-            MPI_Recv(&recv_size, 1, MPI_INT, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            vector<char> recv_buffer(recv_size);
-            MPI_Recv(recv_buffer.data(), recv_size, MPI_CHAR, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            string received_string(recv_buffer.begin(), recv_buffer.end());
-            unordered_map<string, int> received_map = countWords(received_string);
-            mergeMaps(global_word_count, received_map);
+            unordered_map<string, int> local_count = count_words(local_text);
+
+            int send_size = local_text.size();
+            MPI_Send(&send_size, 1, MPI_INT, 1, 0, MPI_COMM_WORLD);
+            MPI_Send(local_text.data(), send_size, MPI_CHAR, 1, 0, MPI_COMM_WORLD);
         }
 
-        for (const auto &entry : global_word_count) {
-            cout << entry.first << ": " << entry.second << endl;
-        }
-    } else {
-        string local_text_string(local_text);
-        int send_size = local_text_string.size();
-        MPI_Send(&send_size, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
-        MPI_Send(local_text_string.data(), send_size, MPI_CHAR, 0, 0, MPI_COMM_WORLD);
-    }
+        if(rank == 1) {
 
-    MPI_Finalize();
-    return 0;
-}
+            unordered_map<string, int> global_word_count;
+
+            for(int i = 2; i < size; i++) {
+                int recv_size;
+                MPI_Recv(&recv_size, 1, MPI_INT, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                vector<char> recv_words(recv_size);
+                MPI_Recv(recv_words.data(), recv_size, MPI_CHAR, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                string word_recieved(recv_words.begin(), recv_words.end());
+                unordered_map<string, int> received_map = count_words(word_recieved);
+                merging(global_word_count, received_map);
+            }
+
+            for(auto &word : global_word_count) {
+                cout << word.first << ": " << word.second << endl;
+            }
+        }
+
+            MPI_Finalize();
+
+            return 0;
+        }
