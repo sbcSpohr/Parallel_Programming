@@ -1,9 +1,13 @@
 #include <iostream>
 #include <string>
+#include <sstream>
 #include <vector>
 #include <unordered_map>
 #include <fstream>
-#include <sstream>
+
+#include <cereal/types/unordered_map.hpp>
+#include <cereal/types/string.hpp>
+#include <cereal/archives/binary.hpp>
 
 #include <mpi.h>
 
@@ -12,26 +16,21 @@ using namespace std;
 unordered_map<string, int> count_words(string &text) {
 
     unordered_map<string, int> count;
-
     stringstream ss(text);
     string word;
-
-    while(getline(ss, word, ' ')) {
+    while(ss >> word) {
         count[word]++;
     }
-    
     return count;
 }
 
-void merging (unordered_map<string, int>&global_map, unordered_map<string, int>&local_map) {
-
-    for(auto &word : local_map) {
-        global_map[word.first] += word.second;
+void merging(unordered_map<string, int> &map1, unordered_map<string, int> &map2) {
+    for(auto &word : map2) {
+        map1[word.first] += word.second;
     }
 }
 
 int main(int argc, char **argv) {
-
 
     MPI_Init(&argc, &argv);
     int rank, size;
@@ -44,64 +43,94 @@ int main(int argc, char **argv) {
 
     if(rank == 0) {
         ifstream file(argv[1]);
-
         if(!file) {
-            cerr << "Erro abrir arquivo" << endl;
+            cerr << "ERRO abrir arquivo" << endl;
             MPI_Abort(MPI_COMM_WORLD, 1);
         }
 
-        stringstream store_text;
+        int index = 2;
 
-        store_text << file.rdbuf();
-        full_text = store_text.str();
-
+        string tword;
+        while(getline(file, tword)) {
+            int chunk_length = tword.size();
+            MPI_Send(&chunk_length, 1, MPI_INT, index, 0, MPI_COMM_WORLD);
+            MPI_Send(tword.data(), tword.size(), MPI_CHAR, index, 0, MPI_COMM_WORLD);
+            index++;
+            if(index == size) {
+                index = 2;
+            }
+        }
         file.close();
 
-        total_size = full_text.size();
-
+        int stop = -1;
+        for(int i = 2; i < size; i++) {
+            MPI_Send(&stop, 1, MPI_INT, i, 0, MPI_COMM_WORLD);
+        }
     }
 
-        MPI_Bcast(&total_size, 1, MPI_INT, 0, MPI_COMM_WORLD);
-        full_text.resize(total_size);          
-        MPI_Bcast(&full_text[0], total_size, MPI_CHAR, 0, MPI_COMM_WORLD);
+    if(rank > 1) {
 
-        if(rank > 1) {
+        while(true) {
+            int chunk_length;
+            MPI_Recv(&chunk_length, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-            int start = (rank == 2) ? 0 : (total_size / size) * rank;
-            int end = (rank == size - 1) ? total_size : (total_size / size) * (rank + 1);
+            if(chunk_length == -1) {
+                break;
+            }
+            vector<char> buffer(chunk_length);
+            MPI_Recv(buffer.data(), chunk_length, MPI_CHAR, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-            while(start > 0 && full_text[start] != ' ') { start++;}
-            while(end < total_size && full_text[end] != ' ') { end++;}
+            string local_text_string(buffer.begin(), buffer.end());
+            unordered_map<string, int> local_count = count_words(local_text_string);
 
-            string local_text = full_text.substr(start, end - start);
+            stringstream ss;
+            {
+                cereal::BinaryOutputArchive archive(ss);
+                archive(local_count);
+            }
+            string serialized_data = ss.str();
 
-            unordered_map<string, int> local_count = count_words(local_text);
+            int serialized_size = serialized_data.size();
 
-            int send_size = local_text.size();
-            MPI_Send(&send_size, 1, MPI_INT, 1, 0, MPI_COMM_WORLD);
-            MPI_Send(local_text.data(), send_size, MPI_CHAR, 1, 0, MPI_COMM_WORLD);
-        }
+            MPI_Send(&serialized_size, 1, MPI_INT, 1, 0, MPI_COMM_WORLD);
+            MPI_Send(serialized_data.data(), serialized_size, MPI_CHAR, 1, 0, MPI_COMM_WORLD);
+    }
 
-        if(rank == 1) {
+    int stop1 = -1;
+    MPI_Send(&stop1, 1, MPI_INT, 1, 0, MPI_COMM_WORLD);
+}
 
-            unordered_map<string, int> global_word_count;
+    if(rank == 1) {
+        unordered_map<string, int> global_word_count;
+        
+        int workers = size - 2;
+        while(workers > 0) {
+            int recv_size;
+            MPI_Recv(&recv_size, 1, MPI_INT, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-            for(int i = 2; i < size; i++) {
-                int recv_size;
-                MPI_Recv(&recv_size, 1, MPI_INT, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                vector<char> recv_words(recv_size);
-                MPI_Recv(recv_words.data(), recv_size, MPI_CHAR, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                string word_recieved(recv_words.begin(), recv_words.end());
-                unordered_map<string, int> received_map = count_words(word_recieved);
+            if(recv_size == -1) {
+                workers--;
+            } else {
+                vector<char> recv_buffer(recv_size);
+                MPI_Recv(recv_buffer.data(), recv_size, MPI_CHAR, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+                string serialized_data(recv_buffer.begin(), recv_buffer.end());
+                stringstream ss(serialized_data);
+                cereal::BinaryInputArchive archive(ss);
+
+                unordered_map<string, int> received_map;
+                archive(received_map);
+
                 merging(global_word_count, received_map);
             }
-
-            for(auto &word : global_word_count) {
-                cout << word.first << ": " << word.second << endl;
-            }
         }
 
-            MPI_Finalize();
-
-            return 0;
+        for(auto &word : global_word_count) {
+            cout << word.first << ":" << word.second << endl;
         }
+    }
+
+    MPI_Finalize();
+
+    return 0;
+}
