@@ -23,6 +23,8 @@ vector<pair<string, int>> count_words(string &text) {
     return count;
 }
 
+//fazer o unordered_map
+
 
 int main(int argc, char **argv) {
 
@@ -115,12 +117,13 @@ int main(int argc, char **argv) {
                 hash<string> hasher;
                 size_t hash_value = hasher(received_word);
                 size_t hash_value_m = 2 + (hash_value % (size - 2));
-                cout << received_word << " " << "hash value modulo: " << hash_value_m << endl;
+                //cout << received_word << " " << "hash value modulo: " << hash_value_m << endl;
 
                 int size_word = received_word.size();
                 MPI_Send(&size_word, 1, MPI_INT, hash_value_m, 0, MPI_COMM_WORLD);
                 MPI_Send(received_word.data(), received_word.size(), MPI_CHAR, hash_value_m, 0, MPI_COMM_WORLD);
-            }
+            }                
+
         }
 
         int stop_signal = -1;
@@ -130,6 +133,8 @@ int main(int argc, char **argv) {
     }
 
     if(rank > 1) {
+
+        unordered_map<string, int> accumulate;
 
         while(true) {
 
@@ -145,8 +150,51 @@ int main(int argc, char **argv) {
 
             string word(received_wordd.begin(), received_wordd.end());
 
-            cout << rank << " recebeu a palavra " << word << endl;
+            //cout << rank << " recebeu a palavra ( " << word << " )" << endl;
+
+            accumulate[word]++;
+
+            int sizee_word = word.size();
+            MPI_Send(&sizee_word, 1, MPI_INT, 1, 0, MPI_COMM_WORLD);
+            MPI_Send(word.data(), word.size(), MPI_CHAR, 1, 0, MPI_COMM_WORLD);
         }
+
+        // for(auto &word : accumulate) {
+        //     cout << "Rank: " << rank << " - " << word.first << "(" << word.second << ") " << endl;
+        // }
+
+        int stop_signal = -1;
+        MPI_Send(&stop_signal, 1, MPI_INT, 1, 0, MPI_COMM_WORLD);
+    }
+
+    if(rank == 1) {
+
+        unordered_map<string, int> final_map;
+
+        int workers_finish = 0;
+
+        while(workers_finish < size - 2) {
+
+            MPI_Status status;
+            int word_size;
+            MPI_Recv(&word_size, 1, MPI_INT, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &status);
+
+            if(word_size == -1) {
+                workers_finish++;
+            } else {
+                vector<char>word_recv(word_size);
+                MPI_Recv(word_recv.data(), word_size, MPI_CHAR, status.MPI_SOURCE, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    
+                string final_word(word_recv.begin(), word_recv.end());
+    
+                final_map[final_word]++;
+            }
+        }
+
+        for(auto &word : final_map) {
+            cout << "Palavra: " << word.first << "(" << word.second << ") " << endl;
+        }
+
     }
 
     MPI_Finalize();
